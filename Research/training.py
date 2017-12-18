@@ -4,16 +4,18 @@ import numpy as np
 import pandas as pd
 
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import log_loss
 
 from keras.preprocessing.image import ImageDataGenerator
 from keras.models import Sequential
 from keras.layers import Conv2D, MaxPooling2D, Dense, Dropout, Input, Flatten, Activation
-from keras.layers import GlobalMaxPooling2D
+from keras.layers import GlobalMaxPooling2D, ActivityRegularization
 from keras.layers.normalization import BatchNormalization
 from keras.layers.merge import Concatenate
 from keras.models import Model
 from keras import initializers
-from keras.optimizers import Adam, SGD
+from keras.regularizers import l2
+from keras.optimizers import Adam, SGD, RMSprop
 from keras.callbacks import ModelCheckpoint, EarlyStopping, TensorBoard, ReduceLROnPlateau
 from keras.utils import to_categorical
 
@@ -61,42 +63,62 @@ def prepare_data(path):
 
 
 def get_base_model():
+    REG = 1e-6
+    
     #Building the model
     model=Sequential()
     
     #Conv Layer 1
-    model.add(Conv2D(64, kernel_size=(3, 3), activation='relu', input_shape=(75, 75, 2)))
-    model.add(MaxPooling2D(pool_size=(3, 3), strides=(2, 2)))
+    model.add(Conv2D(64, 
+                     kernel_size=(3, 3), 
+                     activation='relu',
+                     kernel_regularizer=l2(REG),
+                     input_shape=(75, 75, 2)))
+    
+    model.add(MaxPooling2D(pool_size=(3, 3), 
+                           strides=(2, 2)))
 
     #Conv Layer 2
-    model.add(Conv2D(128, kernel_size=(3, 3), activation='relu' ))
-    model.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
+    model.add(Conv2D(128, kernel_size=(3, 3), 
+                     activation='relu',
+                     kernel_regularizer=l2(REG)))
+    
+    model.add(MaxPooling2D(pool_size=(2, 2), 
+                           strides=(2, 2)))
 
     #Conv Layer 3
-    model.add(Conv2D(128, kernel_size=(3, 3), activation='relu'))
-    model.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
+    model.add(Conv2D(128, 
+                     kernel_size=(3, 3), 
+                     activation='relu',
+                     kernel_regularizer=l2(REG)))
+    
+    model.add(MaxPooling2D(pool_size=(2, 2), 
+                           strides=(2, 2)))
 
     #Conv Layer 4
-    model.add(Conv2D(256, kernel_size=(3, 3), activation='relu'))
-    model.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
+    model.add(Conv2D(256, 
+                     kernel_size=(3, 3),
+                     activation='relu',
+                     kernel_regularizer=l2(REG)))
+    model.add(MaxPooling2D(pool_size=(2, 2), 
+                           strides=(2, 2)))
 
     #Flatten the data for upcoming dense layers
     model.add(Flatten())
 
     #Dense Layers
-    model.add(Dense(256))
+    model.add(Dense(256, kernel_regularizer=l2(REG)))
     model.add(Activation('relu'))
-    model.add(Dropout(0.7))
 
     #Dense Layer 2
-    model.add(Dense(128))
+    model.add(Dense(128, kernel_regularizer=l2(REG)))
     model.add(Activation('relu'))
 
     #Sigmoid Layer
     model.add(Dense(2))
     model.add(Activation('softmax'))
 
-    opt=SGD(lr=0.01, momentum=0.9)
+    opt=SGD(lr=0.001, momentum=0.9)
     model.compile(loss='binary_crossentropy',
                   optimizer=opt,
                   metrics=['accuracy'])
@@ -107,7 +129,7 @@ def get_base_model():
 def get_model_callbacks(save_dir):
     stopping = EarlyStopping(monitor='val_loss', 
                              min_delta=1e-4, 
-                             patience=50, 
+                             patience=200, 
                              verbose=False, 
                              mode='min')
     
@@ -118,8 +140,8 @@ def get_model_callbacks(save_dir):
     board = TensorBoard(log_dir=board_path)
     
     lr_sheduler = ReduceLROnPlateau(monitor='val_loss', 
-                                    factor=0.9, 
-                                    patience=10, 
+                                    factor=0.7, 
+                                    patience=20, 
                                     verbose=True, 
                                     mode='min', 
                                     epsilon=1e-4,
@@ -148,12 +170,12 @@ def load_model():
 
 
 def prepare_submission(model, X_test, path):
-    predicted_test = model.predict_proba(X_test)
+    proba = model.predict_proba(X_test)
     
     _, test = load_data('../input')
     submission = pd.DataFrame()
     submission['id'] = test['id']
-    submission['is_iceberg'] = predicted_test[:, 1].reshape((predicted_test.shape[0]))
+    submission['is_iceberg'] = proba[:, 1].reshape((proba.shape[0]))
     submission.to_csv(path, index=False)
     
 
@@ -163,7 +185,7 @@ def main():
     callbacks = get_model_callbacks(save_dir='../experiments/base_model')
     
     model.fit(X_train, y_train,
-              batch_size=128,
+              batch_size=512,
               epochs=1000,
               verbose=1,
               validation_data=(X_valid, y_valid),
@@ -171,8 +193,11 @@ def main():
     
     model.load_weights(filepath='../experiments/base_model/model/model_weights.hdf5')
     score = model.evaluate(X_valid, y_valid, verbose=1)
+    proba = model.predict_proba(X_valid)
+    
     print('Val loss:', score[0])
     print('Val accuracy:', score[1])
+    print('True validation logloss:', log_loss(y_valid.argmax(axis=1), proba))
     
     prepare_submission(model, X_test, '../submission.csv')
     
