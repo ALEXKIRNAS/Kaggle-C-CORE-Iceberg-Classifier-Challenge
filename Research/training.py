@@ -3,127 +3,13 @@ import os
 import numpy as np
 import pandas as pd
 
-from sklearn.model_selection import train_test_split
 from sklearn.metrics import log_loss
 
 from keras.preprocessing.image import ImageDataGenerator
-from keras.models import Sequential
-from keras.layers import Conv2D, MaxPooling2D, Dense, Dropout, Input, Flatten, Activation
-from keras.layers import GlobalMaxPooling2D, ActivityRegularization
-from keras.layers.normalization import BatchNormalization
-from keras.layers.merge import Concatenate
-from keras.models import Model
-from keras import initializers
-from keras.regularizers import l2
-from keras.optimizers import Adam, SGD, RMSprop
 from keras.callbacks import ModelCheckpoint, EarlyStopping, TensorBoard, ReduceLROnPlateau
-from keras.utils import to_categorical
 
-
-def load_data(path):
-    train = pd.read_json(os.path.join(path, "./train.json"))
-    test = pd.read_json(os.path.join(path, "./test.json"))
-    return (train, test)
-    
-
-def preprocess(df):
-    X_band_1 = np.array([np.array(band).astype(np.float32).reshape(75, 75) 
-                         for band in df["band_1"]])
-    X_band_2 = np.array([np.array(band).astype(np.float32).reshape(75, 75) 
-                         for band in df["band_2"]])
-    
-    X_band_1_min = X_band_1.min(axis=(1, 2), keepdims=True)
-    X_band_1_max = X_band_1.max(axis=(1, 2), keepdims=True)
-    
-    X_band_2_min = X_band_2.min(axis=(1, 2), keepdims=True)
-    X_band_2_max = X_band_2.max(axis=(1, 2), keepdims=True)
-    
-    X_band_1 = (X_band_1 - X_band_1_min) / (X_band_1_max - X_band_1_min) - 0.5
-    X_band_2 = (X_band_2 - X_band_2_min) / (X_band_2_max - X_band_2_min) - 0.5
-    
-    images = np.concatenate([X_band_1[:, :, :, np.newaxis], 
-                             X_band_2[:, :, :, np.newaxis]], 
-                            axis=-1)
-    return images
-
-
-def prepare_data(path):
-    train, test = load_data(path)
-    X_train, y_train = (preprocess(train), 
-                        to_categorical(train['is_iceberg'].as_matrix().reshape(-1, 1)))
-    
-    X_train_cv, X_valid, y_train_cv, y_valid = train_test_split(X_train, 
-                                                                y_train, 
-                                                                random_state=0xCAFFE, 
-                                                                train_size=0.75)
-    
-    X_test = preprocess(test)
-    
-    return (X_train_cv, y_train_cv, X_valid, y_valid, X_test)
-
-
-def get_base_model():
-    REG = 1e-6
-    
-    #Building the model
-    model=Sequential()
-    
-    #Conv Layer 1
-    model.add(Conv2D(64, 
-                     kernel_size=(3, 3), 
-                     activation='relu',
-                     kernel_regularizer=l2(REG),
-                     input_shape=(75, 75, 2)))
-    
-    model.add(MaxPooling2D(pool_size=(3, 3), 
-                           strides=(2, 2)))
-
-    #Conv Layer 2
-    model.add(Conv2D(128, kernel_size=(3, 3), 
-                     activation='relu',
-                     kernel_regularizer=l2(REG)))
-    
-    model.add(MaxPooling2D(pool_size=(2, 2), 
-                           strides=(2, 2)))
-
-    #Conv Layer 3
-    model.add(Conv2D(128, 
-                     kernel_size=(3, 3), 
-                     activation='relu',
-                     kernel_regularizer=l2(REG)))
-    
-    model.add(MaxPooling2D(pool_size=(2, 2), 
-                           strides=(2, 2)))
-
-    #Conv Layer 4
-    model.add(Conv2D(256, 
-                     kernel_size=(3, 3),
-                     activation='relu',
-                     kernel_regularizer=l2(REG)))
-    model.add(MaxPooling2D(pool_size=(2, 2), 
-                           strides=(2, 2)))
-
-    #Flatten the data for upcoming dense layers
-    model.add(Flatten())
-
-    #Dense Layers
-    model.add(Dense(256, kernel_regularizer=l2(REG)))
-    model.add(Activation('relu'))
-
-    #Dense Layer 2
-    model.add(Dense(128, kernel_regularizer=l2(REG)))
-    model.add(Activation('relu'))
-
-    #Sigmoid Layer
-    model.add(Dense(2))
-    model.add(Activation('softmax'))
-
-    opt=SGD(lr=0.001, momentum=0.9)
-    model.compile(loss='binary_crossentropy',
-                  optimizer=opt,
-                  metrics=['accuracy'])
-    
-    return model
+from data_loader import prepare_data, prepare_data_cv, load_data
+from base_model import get_base_model
 
 
 def get_model_callbacks(save_dir):
@@ -163,43 +49,60 @@ def get_model_callbacks(save_dir):
     return callbacks
 
 
-def load_model():
-    model = get_base_model()
+def load_model(model_loader_fn):
+    model = model_loader_fn()
     model.summary()
     return model
 
 
-def prepare_submission(model, X_test, path):
-    proba = model.predict_proba(X_test)
-    
+def prepare_submission(models_proba, path):
     _, test = load_data('../input')
+    proba = np.mean(models_proba, axis=0)
+    
     submission = pd.DataFrame()
     submission['id'] = test['id']
-    submission['is_iceberg'] = proba[:, 1].reshape((proba.shape[0]))
+    submission['is_iceberg'] = proba.reshape((proba.shape[0]))
     submission.to_csv(path, index=False)
     
 
 def main():
-    (X_train, y_train, X_valid, y_valid, X_test) = prepare_data('../input')
-    model = load_model()
-    callbacks = get_model_callbacks(save_dir='../experiments/base_model')
+    (kfold_data, X_test) = prepare_data_cv('../input')
     
-    model.fit(X_train, y_train,
-              batch_size=512,
-              epochs=1000,
-              verbose=1,
-              validation_data=(X_valid, y_valid),
-              callbacks=callbacks)
+    models_proba = []
+    models_acc = []
+    models_logloss = []
     
-    model.load_weights(filepath='../experiments/base_model/model/model_weights.hdf5')
-    score = model.evaluate(X_valid, y_valid, verbose=1)
-    proba = model.predict_proba(X_valid)
+    for idx, data in enumerate(kfold_data):
+        X_train, y_train, X_valid, y_valid = data
+        model = load_model(get_base_model)
+        callbacks = get_model_callbacks(save_dir=('../experiments/base_model_kfold_%02d' % idx))
+
+        model.fit(X_train, y_train,
+                  batch_size=512,
+                  epochs=20,
+                  verbose=1,
+                  validation_data=(X_valid, y_valid),
+                  callbacks=callbacks)
+
+        model.load_weights(filepath=('../experiments/base_model_kfold_%02d/model/model_weights.hdf5' % idx))
+        score = model.evaluate(X_valid, y_valid, verbose=False)
+        proba = model.predict_proba(X_valid)
+        
+        models_proba.append(model.predict_proba(X_test)[:, 1])
+        models_acc.append(score[1])
+        models_logloss.append(log_loss(y_valid.argmax(axis=1), proba))
     
-    print('Val loss:', score[0])
-    print('Val accuracy:', score[1])
-    print('True validation logloss:', log_loss(y_valid.argmax(axis=1), proba))
-    
-    prepare_submission(model, X_test, '../submission.csv')
+    print('Acc:\nMean: %f\nStd: %f\nMin: %f\nMax: %f\n\n' % (np.mean(models_acc), 
+                                                             np.std(models_acc),
+                                                             np.min(models_acc),
+                                                             np.max(models_acc)))
+
+    print('Loss:\nMean: %f\nStd: %f\nMin: %f\nMax: %f\n\n' % (np.mean(models_logloss), 
+                                                              np.std(models_logloss),
+                                                              np.min(models_logloss),
+                                                              np.max(models_logloss)))
+
+    prepare_submission(models_proba, '../submission.csv')
     
     
 if __name__ == '__main__':
