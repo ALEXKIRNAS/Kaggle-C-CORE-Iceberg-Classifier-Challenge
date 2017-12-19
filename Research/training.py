@@ -5,7 +5,6 @@ import pandas as pd
 
 from sklearn.metrics import log_loss
 
-from keras.preprocessing.image import ImageDataGenerator
 from keras.callbacks import ModelCheckpoint, EarlyStopping, TensorBoard, ReduceLROnPlateau
 
 from data_loader import prepare_data, prepare_data_cv, load_data
@@ -66,7 +65,7 @@ def prepare_submission(models_proba, path):
     
 
 def main():
-    (kfold_data, X_test) = prepare_data('../input')
+    (kfold_data, X_test) = prepare_data_cv('../input')
     
     models_proba = []
     models_acc = []
@@ -81,14 +80,12 @@ def main():
         
         model.fit_generator(
             data_generator,
-            steps_per_epoch=4,
+            steps_per_epoch=10,
             epochs=1000,
             verbose=True,
             validation_data=(X_valid, y_valid),
             callbacks=callbacks,
-            use_multiprocessing=True,
-            workers=20,
-            max_queue_size=1024)
+            shuffle=True)
 
         model.load_weights(filepath=('../experiments/base_model_aug/fold_%02d/model/model_weights.hdf5' % idx))
         score = model.evaluate(X_valid, y_valid, verbose=False)
@@ -108,7 +105,7 @@ def main():
                                                               np.min(models_logloss),
                                                               np.max(models_logloss)))
 
-    #prepare_submission(models_proba, '../submission.csv')
+    prepare_submission(models_proba, '../submission.csv')
     
     
 if __name__ == '__main__':

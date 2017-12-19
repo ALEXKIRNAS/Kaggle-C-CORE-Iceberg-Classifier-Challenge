@@ -10,7 +10,7 @@ from keras.optimizers import Adam, SGD, RMSprop
 
 
 def get_base_model():
-    WEIGHT_DECAY = 1e-6
+    WEIGHT_DECAY = 0
     
     #Building the model
     model=Sequential()
@@ -65,7 +65,7 @@ def get_base_model():
     model.add(Dense(2, kernel_regularizer=l2(WEIGHT_DECAY)))
     model.add(Activation('softmax'))
 
-    opt=SGD(lr=0.001, momentum=0.9)
+    opt=SGD(lr=0.002, momentum=0.9)
     model.compile(loss='binary_crossentropy',
                   optimizer=opt,
                   metrics=['accuracy'])
