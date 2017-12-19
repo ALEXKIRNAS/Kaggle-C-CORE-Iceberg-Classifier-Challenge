@@ -19,14 +19,14 @@ def preprocess(df):
     X_band_2 = np.array([np.array(band).astype(np.float32).reshape(75, 75) 
                          for band in df["band_2"]])
     
-    X_band_1_min = X_band_1.min(axis=(1, 2), keepdims=True)
-    X_band_1_max = X_band_1.max(axis=(1, 2), keepdims=True)
+#     X_band_1_min = X_band_1.min(axis=(1, 2), keepdims=True)
+#     X_band_1_max = X_band_1.max(axis=(1, 2), keepdims=True)
     
-    X_band_2_min = X_band_2.min(axis=(1, 2), keepdims=True)
-    X_band_2_max = X_band_2.max(axis=(1, 2), keepdims=True)
+#     X_band_2_min = X_band_2.min(axis=(1, 2), keepdims=True)
+#     X_band_2_max = X_band_2.max(axis=(1, 2), keepdims=True)
     
-    X_band_1 = (X_band_1 - X_band_1_min) / (X_band_1_max - X_band_1_min) - 0.5
-    X_band_2 = (X_band_2 - X_band_2_min) / (X_band_2_max - X_band_2_min) - 0.5
+#     X_band_1 = (X_band_1 - X_band_1_min) / (X_band_1_max - X_band_1_min) - 0.5
+#     X_band_2 = (X_band_2 - X_band_2_min) / (X_band_2_max - X_band_2_min) - 0.5
     
     images = np.concatenate([X_band_1[:, :, :, np.newaxis], 
                              X_band_2[:, :, :, np.newaxis]], 

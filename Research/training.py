@@ -10,7 +10,7 @@ from keras.callbacks import ModelCheckpoint, EarlyStopping, TensorBoard, ReduceL
 
 from data_loader import prepare_data, prepare_data_cv, load_data
 from base_model import get_base_model
-
+from data_generation import get_data_generator
 
 def get_model_callbacks(save_dir):
     stopping = EarlyStopping(monitor='val_loss', 
@@ -66,7 +66,7 @@ def prepare_submission(models_proba, path):
     
 
 def main():
-    (kfold_data, X_test) = prepare_data_cv('../input')
+    (kfold_data, X_test) = prepare_data('../input')
     
     models_proba = []
     models_acc = []
@@ -74,17 +74,23 @@ def main():
     
     for idx, data in enumerate(kfold_data):
         X_train, y_train, X_valid, y_valid = data
+        
         model = load_model(get_base_model)
-        callbacks = get_model_callbacks(save_dir=('../experiments/base_model_kfold_%02d' % idx))
+        callbacks = get_model_callbacks(save_dir=('../experiments/base_model_aug/fold_%02d' % idx))
+        data_generator = get_data_generator(X_train, y_train, batch_size=256)
+        
+        model.fit_generator(
+            data_generator,
+            steps_per_epoch=4,
+            epochs=1000,
+            verbose=True,
+            validation_data=(X_valid, y_valid),
+            callbacks=callbacks,
+            use_multiprocessing=True,
+            workers=20,
+            max_queue_size=1024)
 
-        model.fit(X_train, y_train,
-                  batch_size=512,
-                  epochs=20,
-                  verbose=1,
-                  validation_data=(X_valid, y_valid),
-                  callbacks=callbacks)
-
-        model.load_weights(filepath=('../experiments/base_model_kfold_%02d/model/model_weights.hdf5' % idx))
+        model.load_weights(filepath=('../experiments/base_model_aug/fold_%02d/model/model_weights.hdf5' % idx))
         score = model.evaluate(X_valid, y_valid, verbose=False)
         proba = model.predict_proba(X_valid)
         
@@ -102,7 +108,7 @@ def main():
                                                               np.min(models_logloss),
                                                               np.max(models_logloss)))
 
-    prepare_submission(models_proba, '../submission.csv')
+    #prepare_submission(models_proba, '../submission.csv')
     
     
 if __name__ == '__main__':
