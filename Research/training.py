@@ -3,7 +3,7 @@ import os
 import numpy as np
 import pandas as pd
 
-from sklearn.metrics import log_loss
+from sklearn.metrics import log_loss, roc_auc_score
 
 from keras.callbacks import ModelCheckpoint, EarlyStopping, TensorBoard, ReduceLROnPlateau
 
@@ -54,6 +54,49 @@ def load_model(model_loader_fn):
     return model
 
 
+def get_resnext():
+    from keras.optimizers import Adam, SGD, RMSprop
+    from resnext import ResNext
+    model= ResNext(
+        input_shape=(75, 75, 2), 
+        depth=20, 
+        cardinality=4, 
+        width=4,
+        weight_decay=5e-4,
+        include_top=True, 
+        weights=None,
+        classes=2)
+    
+    opt=SGD(lr=0.01, momentum=0.9)
+    model.compile(loss='binary_crossentropy',
+                  optimizer=opt,
+                  metrics=['accuracy'])
+    
+    return model
+
+
+def get_nasnet():
+    from keras.optimizers import Adam, SGD, RMSprop
+    from nasnet import NASNetMobile
+    
+    model = NASNetMobile(
+        input_shape=(75, 75, 2),
+        dropout=0.7,
+        weight_decay=3e-3,
+        use_auxiliary_branch=False,
+        include_top=True,
+        pooling=None,
+        weights=None,
+        classes=2)
+    
+    opt=SGD(lr=0.01, momentum=0.9)
+    model.compile(loss='binary_crossentropy',
+                  optimizer=opt,
+                  metrics=['accuracy'])
+    
+    return model
+
+
 def prepare_submission(models_proba, path):
     _, test = load_data('../input')
     proba = np.mean(models_proba, axis=0)
@@ -68,37 +111,36 @@ def main():
     (kfold_data, X_test) = prepare_data_cv('../input')
     
     models_proba = []
-    models_acc = []
+    models_roc = []
     models_logloss = []
     
     for idx, data in enumerate(kfold_data):
         X_train, y_train, X_valid, y_valid = data
         
-        model = load_model(get_base_model)
-        callbacks = get_model_callbacks(save_dir=('../experiments/base_model_aug/fold_%02d' % idx))
+        model = load_model(get_nasnet)
+        callbacks = get_model_callbacks(save_dir=('../experiments/nasnet/fold_%02d' % idx))
         data_generator = get_data_generator(X_train, y_train, batch_size=256)
         
         model.fit_generator(
             data_generator,
-            steps_per_epoch=10,
-            epochs=1000,
+            steps_per_epoch=20,
+            epochs=5000,
             verbose=True,
             validation_data=(X_valid, y_valid),
             callbacks=callbacks,
             shuffle=True)
 
-        model.load_weights(filepath=('../experiments/base_model_aug/fold_%02d/model/model_weights.hdf5' % idx))
-        score = model.evaluate(X_valid, y_valid, verbose=False)
-        proba = model.predict_proba(X_valid)
+        model.load_weights(filepath=('../experiments/nasnet/fold_%02d/model/model_weights.hdf5' % idx))
+        proba = model.predict(X_valid)[:, 1]
         
-        models_proba.append(model.predict_proba(X_test)[:, 1])
-        models_acc.append(score[1])
+        models_proba.append(model.predict(X_test)[:, 1])
+        models_roc.append(roc_auc_score(y_valid.argmax(axis=1), proba))
         models_logloss.append(log_loss(y_valid.argmax(axis=1), proba))
     
-    print('Acc:\nMean: %f\nStd: %f\nMin: %f\nMax: %f\n\n' % (np.mean(models_acc), 
-                                                             np.std(models_acc),
-                                                             np.min(models_acc),
-                                                             np.max(models_acc)))
+    print('ROC AUC:\nMean: %f\nStd: %f\nMin: %f\nMax: %f\n\n' % (np.mean(models_roc), 
+                                                             np.std(models_roc),
+                                                             np.min(models_roc),
+                                                             np.max(models_roc)))
 
     print('Loss:\nMean: %f\nStd: %f\nMin: %f\nMax: %f\n\n' % (np.mean(models_logloss), 
                                                               np.std(models_logloss),

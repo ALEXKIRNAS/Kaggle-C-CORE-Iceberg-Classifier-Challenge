@@ -13,20 +13,14 @@ def load_data(path):
     return (train, test)
     
 
-def preprocess(df):
+def preprocess(df, means=(-22.159262, -24.953745), stds=(5.33146, 4.5463958)):
     X_band_1 = np.array([np.array(band).astype(np.float32).reshape(75, 75) 
                          for band in df["band_1"]])
     X_band_2 = np.array([np.array(band).astype(np.float32).reshape(75, 75) 
                          for band in df["band_2"]])
-    
-    X_band_1_min = X_band_1.min(axis=(1, 2), keepdims=True)
-    X_band_1_max = X_band_1.max(axis=(1, 2), keepdims=True)
-    
-    X_band_2_min = X_band_2.min(axis=(1, 2), keepdims=True)
-    X_band_2_max = X_band_2.max(axis=(1, 2), keepdims=True)
-    
-    X_band_1 = (X_band_1 - X_band_1_min) / (X_band_1_max - X_band_1_min) - 0.5
-    X_band_2 = (X_band_2 - X_band_2_min) / (X_band_2_max - X_band_2_min) - 0.5
+
+    X_band_1 = (X_band_1 - means[0]) / stds[0]
+    X_band_2 = (X_band_2 - means[1]) / stds[1]
     
     images = np.concatenate([X_band_1[:, :, :, np.newaxis], 
                              X_band_2[:, :, :, np.newaxis]], 
