@@ -13,17 +13,25 @@ def load_data(path):
     return (train, test)
     
 
-def preprocess(df, means=(-22.159262, -24.953745), stds=(5.33146, 4.5463958)):
+def preprocess(df, 
+               means=(-22.159262, -24.953745, 40.021883465782651), 
+               stds=(5.33146, 4.5463958, 4.0815391476694414)):
     X_band_1 = np.array([np.array(band).astype(np.float32).reshape(75, 75) 
                          for band in df["band_1"]])
     X_band_2 = np.array([np.array(band).astype(np.float32).reshape(75, 75) 
                          for band in df["band_2"]])
+    
+    angl = df['inc_angle'].map(lambda x: x if x != 'na' else means[2])
+    angl = np.array([np.full(shape=(75, 75), fill_value=angel).astype(np.float32) 
+                     for angel in angl])
 
     X_band_1 = (X_band_1 - means[0]) / stds[0]
     X_band_2 = (X_band_2 - means[1]) / stds[1]
+    angl = (angl - means[2]) / stds[2]
     
     images = np.concatenate([X_band_1[:, :, :, np.newaxis], 
-                             X_band_2[:, :, :, np.newaxis]], 
+                             X_band_2[:, :, :, np.newaxis],
+                             angl[:, :, :, np.newaxis]], 
                             axis=-1)
     return images
 

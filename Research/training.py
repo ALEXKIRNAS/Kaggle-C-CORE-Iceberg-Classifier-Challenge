@@ -11,6 +11,7 @@ from data_loader import prepare_data, prepare_data_cv, load_data
 from base_model import get_base_model
 from data_generation import get_data_generator
 
+
 def get_model_callbacks(save_dir):
     stopping = EarlyStopping(monitor='val_loss', 
                              min_delta=1e-4, 
@@ -58,8 +59,8 @@ def get_resnext():
     from keras.optimizers import Adam, SGD, RMSprop
     from resnext import ResNext
     model= ResNext(
-        input_shape=(75, 75, 2), 
-        depth=20, 
+        input_shape=(75, 75, 3), 
+        depth=11, 
         cardinality=4, 
         width=4,
         weight_decay=5e-4,
@@ -67,7 +68,7 @@ def get_resnext():
         weights=None,
         classes=2)
     
-    opt=SGD(lr=0.01, momentum=0.9)
+    opt=SGD(lr=0.03, momentum=0.9)
     model.compile(loss='binary_crossentropy',
                   optimizer=opt,
                   metrics=['accuracy'])
@@ -77,19 +78,51 @@ def get_resnext():
 
 def get_nasnet():
     from keras.optimizers import Adam, SGD, RMSprop
-    from nasnet import NASNetMobile
+    from nasnet import NASNet
     
-    model = NASNetMobile(
-        input_shape=(75, 75, 2),
-        dropout=0.7,
-        weight_decay=3e-3,
+    model = NASNet(
+        input_shape=(75, 75, 3),
+        penultimate_filters=48,
+        nb_blocks=2,
+        stem_filters=2,
+        skip_reduction=True,
         use_auxiliary_branch=False,
+        filters_multiplier=1,
+        dropout=0.5,
+        weight_decay=3e-3,
         include_top=True,
-        pooling=None,
         weights=None,
-        classes=2)
+        input_tensor=None,
+        pooling=None,
+        classes=2,
+        default_size=75)
+
     
-    opt=SGD(lr=0.01, momentum=0.9)
+    opt=SGD(lr=0.03, momentum=0.9)
+    model.compile(loss='binary_crossentropy',
+                  optimizer=opt,
+                  metrics=['accuracy'])
+    
+    return model
+
+
+def get_mobile_net():
+    from keras.optimizers import Adam, SGD, RMSprop
+    from keras.applications.mobilenet import MobileNet
+    
+    model = MobileNet(
+        input_shape=(75, 75, 3),
+        alpha=0.5,
+        depth_multiplier=1,
+        dropout=1e-3,
+        include_top=True,
+        weights=None,
+        input_tensor=None,
+        pooling=None,
+        classes=2)
+
+    
+    opt=SGD(lr=0.03, momentum=0.9)
     model.compile(loss='binary_crossentropy',
                   optimizer=opt,
                   metrics=['accuracy'])
@@ -108,7 +141,7 @@ def prepare_submission(models_proba, path):
     
 
 def main():
-    (kfold_data, X_test) = prepare_data_cv('../input')
+    (kfold_data, X_test) = prepare_data('../input')
     
     models_proba = []
     models_roc = []
@@ -117,7 +150,7 @@ def main():
     for idx, data in enumerate(kfold_data):
         X_train, y_train, X_valid, y_valid = data
         
-        model = load_model(get_nasnet)
+        model = load_model(get_mobile_net)
         callbacks = get_model_callbacks(save_dir=('../experiments/nasnet/fold_%02d' % idx))
         data_generator = get_data_generator(X_train, y_train, batch_size=256)
         
@@ -147,7 +180,7 @@ def main():
                                                               np.min(models_logloss),
                                                               np.max(models_logloss)))
 
-    prepare_submission(models_proba, '../submission.csv')
+    prepare_submission(models_proba, '../submission_nasnet.csv')
     
     
 if __name__ == '__main__':
