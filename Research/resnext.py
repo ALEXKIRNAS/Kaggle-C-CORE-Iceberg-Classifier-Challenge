@@ -81,15 +81,6 @@ def ResNext(input_shape=None, depth=29, cardinality=8, width=64, weight_decay=5e
             A Keras model instance.
         """
 
-    if weights not in {'cifar10', None}:
-        raise ValueError('The `weights` argument should be either '
-                         '`None` (random initialization) or `cifar10` '
-                         '(pre-training on CIFAR-10).')
-
-    if weights == 'cifar10' and include_top and classes != 10:
-        raise ValueError('If using `weights` as CIFAR 10 with `include_top`'
-                         ' as true, `classes` should be 10')
-
     if type(depth) == int:
         if (depth - 2) % 9 != 0:
             raise ValueError('Depth of the network must be such that (depth - 2)'
@@ -123,46 +114,8 @@ def ResNext(input_shape=None, depth=29, cardinality=8, width=64, weight_decay=5e
     model = Model(inputs, x, name='resnext')
 
     # load weights
-    if weights == 'cifar10':
-        if (depth == 29) and (cardinality == 8) and (width == 64):
-            # Default parameters match. Weights for this model exist:
-
-            if K.image_data_format() == 'channels_first':
-                if include_top:
-                    weights_path = get_file('resnext_cifar_10_8_64_th_dim_ordering_th_kernels.h5',
-                                            CIFAR_TH_WEIGHTS_PATH,
-                                            cache_subdir='models')
-                else:
-                    weights_path = get_file('resnext_cifar_10_8_64_th_dim_ordering_th_kernels_no_top.h5',
-                                            CIFAR_TH_WEIGHTS_PATH_NO_TOP,
-                                            cache_subdir='models')
-
-                model.load_weights(weights_path)
-
-                if K.backend() == 'tensorflow':
-                    warnings.warn('You are using the TensorFlow backend, yet you '
-                                  'are using the Theano '
-                                  'image dimension ordering convention '
-                                  '(`image_dim_ordering="th"`). '
-                                  'For best performance, set '
-                                  '`image_dim_ordering="tf"` in '
-                                  'your Keras config '
-                                  'at ~/.keras/keras.json.')
-                    convert_all_kernels_in_model(model)
-            else:
-                if include_top:
-                    weights_path = get_file('resnext_cifar_10_8_64_tf_dim_ordering_tf_kernels.h5',
-                                            CIFAR_TF_WEIGHTS_PATH,
-                                            cache_subdir='models')
-                else:
-                    weights_path = get_file('resnext_cifar_10_8_64_tf_dim_ordering_tf_kernels_no_top.h5',
-                                            CIFAR_TF_WEIGHTS_PATH_NO_TOP,
-                                            cache_subdir='models')
-
-                model.load_weights(weights_path)
-
-                if K.backend() == 'theano':
-                    convert_all_kernels_in_model(model)
+    if weights:
+        model.load_weights(weights)
 
     return model
 

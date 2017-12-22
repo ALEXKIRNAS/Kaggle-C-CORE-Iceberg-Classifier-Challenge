@@ -59,16 +59,16 @@ def get_resnext():
     from keras.optimizers import Adam, SGD, RMSprop
     from resnext import ResNext
     model= ResNext(
-        input_shape=(75, 75, 3), 
-        depth=11, 
+        input_shape=(75, 75, 3),
+        depth=29,
         cardinality=4, 
         width=4,
-        weight_decay=5e-4,
+        weight_decay=1e-2,
         include_top=True, 
-        weights=None,
+        weights='../experiments/resnext_29/fold_00/model/model_weights.hdf5',
         classes=2)
     
-    opt=SGD(lr=0.03, momentum=0.9)
+    opt=SGD(lr=0.001, momentum=0.9)
     model.compile(loss='binary_crossentropy',
                   optimizer=opt,
                   metrics=['accuracy'])
@@ -82,14 +82,14 @@ def get_nasnet():
     
     model = NASNet(
         input_shape=(75, 75, 3),
-        penultimate_filters=48,
-        nb_blocks=2,
-        stem_filters=2,
+        penultimate_filters=24,
+        nb_blocks=1,
+        stem_filters=1,
         skip_reduction=True,
         use_auxiliary_branch=False,
-        filters_multiplier=1,
-        dropout=0.5,
-        weight_decay=3e-3,
+        filters_multiplier=2,
+        dropout=0.0,
+        weight_decay=1e-2,
         include_top=True,
         weights=None,
         input_tensor=None,
@@ -102,7 +102,6 @@ def get_nasnet():
     model.compile(loss='binary_crossentropy',
                   optimizer=opt,
                   metrics=['accuracy'])
-    
     return model
 
 
@@ -150,20 +149,20 @@ def main():
     for idx, data in enumerate(kfold_data):
         X_train, y_train, X_valid, y_valid = data
         
-        model = load_model(get_mobile_net)
-        callbacks = get_model_callbacks(save_dir=('../experiments/nasnet/fold_%02d' % idx))
-        data_generator = get_data_generator(X_train, y_train, batch_size=256)
+        model = load_model(get_resnext)
+        callbacks = get_model_callbacks(save_dir=('../experiments/resnext_29_1/fold_%02d' % idx))
+        data_generator = get_data_generator(X_train, y_train, batch_size=128)
         
         model.fit_generator(
             data_generator,
             steps_per_epoch=20,
-            epochs=5000,
+            epochs=2000,
             verbose=True,
             validation_data=(X_valid, y_valid),
             callbacks=callbacks,
             shuffle=True)
 
-        model.load_weights(filepath=('../experiments/nasnet/fold_%02d/model/model_weights.hdf5' % idx))
+        model.load_weights(filepath=('../experiments/resnext_29_1/fold_%02d/model/model_weights.hdf5' % idx))
         proba = model.predict(X_valid)[:, 1]
         
         models_proba.append(model.predict(X_test)[:, 1])
@@ -171,16 +170,16 @@ def main():
         models_logloss.append(log_loss(y_valid.argmax(axis=1), proba))
     
     print('ROC AUC:\nMean: %f\nStd: %f\nMin: %f\nMax: %f\n\n' % (np.mean(models_roc), 
-                                                             np.std(models_roc),
-                                                             np.min(models_roc),
-                                                             np.max(models_roc)))
+                                                                 np.std(models_roc),
+                                                                 np.min(models_roc),
+                                                                 np.max(models_roc)))
 
     print('Loss:\nMean: %f\nStd: %f\nMin: %f\nMax: %f\n\n' % (np.mean(models_logloss), 
                                                               np.std(models_logloss),
                                                               np.min(models_logloss),
                                                               np.max(models_logloss)))
 
-    prepare_submission(models_proba, '../submission_nasnet.csv')
+    prepare_submission(models_proba, '../submission_resnext_29_1.csv')
     
     
 if __name__ == '__main__':
