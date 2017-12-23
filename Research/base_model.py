@@ -20,7 +20,7 @@ def get_base_model():
                      kernel_size=(3, 3), 
                      activation='relu',
                      kernel_regularizer=l2(WEIGHT_DECAY),
-                     input_shape=(75, 75, 2)))
+                     input_shape=(75, 75, 4)))
     
     model.add(MaxPooling2D(pool_size=(3, 3), 
                            strides=(2, 2)))
@@ -62,10 +62,10 @@ def get_base_model():
     model.add(Activation('relu'))
 
     #Sigmoid Layer
-    model.add(Dense(2, kernel_regularizer=l2(WEIGHT_DECAY)))
-    model.add(Activation('softmax'))
+    model.add(Dense(1, kernel_regularizer=l2(WEIGHT_DECAY)))
+    model.add(Activation('sigmoid'))
 
-    opt=SGD(lr=0.002, momentum=0.9)
+    opt=SGD(lr=0.01, momentum=0.9)
     model.compile(loss='binary_crossentropy',
                   optimizer=opt,
                   metrics=['accuracy'])

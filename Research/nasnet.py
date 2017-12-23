@@ -255,7 +255,7 @@ def NASNet(input_shape=None,
     if include_top:
         x = GlobalAveragePooling2D()(x)
         x = Dropout(dropout)(x)
-        x = Dense(classes, activation='softmax', kernel_regularizer=l2(weight_decay), name='predictions')(x)
+        x = Dense(classes, activation='sigmoid', kernel_regularizer=l2(weight_decay), name='predictions')(x)
     else:
         if pooling == 'avg':
             x = GlobalAveragePooling2D()(x)

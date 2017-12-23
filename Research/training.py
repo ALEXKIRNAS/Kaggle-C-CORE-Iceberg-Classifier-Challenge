@@ -59,16 +59,16 @@ def get_resnext():
     from keras.optimizers import Adam, SGD, RMSprop
     from resnext import ResNext
     model= ResNext(
-        input_shape=(75, 75, 3),
-        depth=29,
+        input_shape=(75, 75, 4),
+        depth=11,
         cardinality=4, 
         width=4,
         weight_decay=1e-2,
         include_top=True, 
-        weights='../experiments/resnext_29/fold_00/model/model_weights.hdf5',
-        classes=2)
+        weights=None,
+        classes=1)
     
-    opt=SGD(lr=0.001, momentum=0.9)
+    opt=SGD(lr=0.01, momentum=0.9)
     model.compile(loss='binary_crossentropy',
                   optimizer=opt,
                   metrics=['accuracy'])
@@ -94,7 +94,7 @@ def get_nasnet():
         weights=None,
         input_tensor=None,
         pooling=None,
-        classes=2,
+        classes=1,
         default_size=75)
 
     
@@ -105,28 +105,40 @@ def get_nasnet():
     return model
 
 
-def get_mobile_net():
+def get_resnet_18():
+    from resnet import ResnetBuilder
     from keras.optimizers import Adam, SGD, RMSprop
-    from keras.applications.mobilenet import MobileNet
     
-    model = MobileNet(
-        input_shape=(75, 75, 3),
-        alpha=0.5,
-        depth_multiplier=1,
-        dropout=1e-3,
-        include_top=True,
-        weights=None,
-        input_tensor=None,
-        pooling=None,
-        classes=2)
-
+    model = ResnetBuilder.build_resnet_18(input_shape=(75, 75, 4),
+                                          num_outputs=1,
+                                          weight_decay=1e-4)
     
     opt=SGD(lr=0.03, momentum=0.9)
     model.compile(loss='binary_crossentropy',
                   optimizer=opt,
                   metrics=['accuracy'])
-    
     return model
+
+
+def get_dense_net():
+    from densenet import DenseNet
+    from keras.optimizers import Adam, SGD, RMSprop
+    
+    model = DenseNet(
+        nb_dense_block=4, 
+        growth_rate=32, 
+        nb_filter=64, 
+        reduction=0.0, 
+        dropout_rate=0.0,
+        weight_decay=1e-4, 
+        classes=1, 
+        weights_path=None)
+    
+    opt=SGD(lr=0.03, momentum=0.9)
+    model.compile(loss='binary_crossentropy',
+                  optimizer=opt,
+                  metrics=['accuracy'])
+    return model    
 
 
 def prepare_submission(models_proba, path):
@@ -150,22 +162,22 @@ def main():
         X_train, y_train, X_valid, y_valid = data
         
         model = load_model(get_resnext)
-        callbacks = get_model_callbacks(save_dir=('../experiments/resnext_29_1/fold_%02d' % idx))
-        data_generator = get_data_generator(X_train, y_train, batch_size=128)
+        callbacks = get_model_callbacks(save_dir=('../experiments/resnext_11_finetune_01/fold_%02d' % idx))
+        data_generator = get_data_generator(X_train, y_train, batch_size=32)
         
         model.fit_generator(
             data_generator,
-            steps_per_epoch=20,
+            steps_per_epoch=50,
             epochs=2000,
             verbose=True,
             validation_data=(X_valid, y_valid),
             callbacks=callbacks,
             shuffle=True)
 
-        model.load_weights(filepath=('../experiments/resnext_29_1/fold_%02d/model/model_weights.hdf5' % idx))
-        proba = model.predict(X_valid)[:, 1]
+        model.load_weights(filepath=('../experiments/resnext_11_finetune_01/fold_%02d/model/model_weights.hdf5' % idx))
+        proba = model.predict(X_valid)
         
-        models_proba.append(model.predict(X_test)[:, 1])
+        models_proba.append(model.predict(X_test))
         models_roc.append(roc_auc_score(y_valid.argmax(axis=1), proba))
         models_logloss.append(log_loss(y_valid.argmax(axis=1), proba))
     
@@ -179,7 +191,7 @@ def main():
                                                               np.min(models_logloss),
                                                               np.max(models_logloss)))
 
-    prepare_submission(models_proba, '../submission_resnext_29_1.csv')
+    prepare_submission(models_proba, '../submission_resnext_11.csv')
     
     
 if __name__ == '__main__':
