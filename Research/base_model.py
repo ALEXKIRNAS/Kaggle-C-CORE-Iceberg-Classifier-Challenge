@@ -34,7 +34,7 @@ def get_base_model():
                            strides=(2, 2)))
 
     #Conv Layer 3
-    model.add(Conv2D(128, 
+    model.add(Conv2D(256, 
                      kernel_size=(3, 3), 
                      activation='relu',
                      kernel_regularizer=l2(WEIGHT_DECAY)))
@@ -43,7 +43,7 @@ def get_base_model():
                            strides=(2, 2)))
 
     #Conv Layer 4
-    model.add(Conv2D(256, 
+    model.add(Conv2D(512, 
                      kernel_size=(3, 3),
                      activation='relu',
                      kernel_regularizer=l2(WEIGHT_DECAY)))
@@ -65,7 +65,7 @@ def get_base_model():
     model.add(Dense(1, kernel_regularizer=l2(WEIGHT_DECAY)))
     model.add(Activation('sigmoid'))
 
-    opt=SGD(lr=0.01, momentum=0.9)
+    opt=SGD(lr=0.03, momentum=0.9)
     model.compile(loss='binary_crossentropy',
                   optimizer=opt,
                   metrics=['accuracy'])
