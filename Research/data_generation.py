@@ -1,5 +1,6 @@
 from keras.preprocessing.image import ImageDataGenerator
 
+
 def get_data_generator(X, y, batch_size=32):
     img_gen = ImageDataGenerator(
         featurewise_center=False,
@@ -8,11 +9,11 @@ def get_data_generator(X, y, batch_size=32):
         samplewise_std_normalization=False,
         zca_whitening=False,
         zca_epsilon=1e-6,
-        rotation_range=90,
+        rotation_range=0.,
         width_shift_range=0.5,
         height_shift_range=0.5,
         shear_range=0.,
-        zoom_range=0.1,
+        zoom_range=0.,
         fill_mode='wrap',
         horizontal_flip=True,
         vertical_flip=True,

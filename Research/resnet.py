@@ -4,20 +4,15 @@ import six
 from keras.models import Model
 from keras.layers import (
     Input,
-    Activation,
-    Dense,
-    Flatten
+    Dense
 )
-from keras.layers.convolutional import (
-    Conv2D,
-    MaxPooling2D,
-    AveragePooling2D
-)
+from keras.layers.convolutional import Conv2D
 from keras.layers.merge import add
 from keras.layers.normalization import BatchNormalization
 from keras.regularizers import l2
 from keras import backend as K
-
+from keras.layers.advanced_activations import PReLU
+from keras.layers.pooling import GlobalAveragePooling2D
 
 WEIGHT_DECAY = None
 
@@ -26,7 +21,7 @@ def _bn_relu(input):
     """Helper to build a BN -> relu block
     """
     norm = BatchNormalization(axis=CHANNEL_AXIS)(input)
-    return Activation("relu")(norm)
+    return PReLU(shared_axes=(1, 2))(norm)
 
 
 def _conv_bn_relu(**conv_params):
@@ -43,7 +38,8 @@ def _conv_bn_relu(**conv_params):
         conv = Conv2D(filters=filters, kernel_size=kernel_size,
                       strides=strides, padding=padding,
                       kernel_initializer=kernel_initializer,
-                      kernel_regularizer=kernel_regularizer)(input)
+                      kernel_regularizer=kernel_regularizer,
+                      use_bias=True)(input)
         return _bn_relu(conv)
 
     return f
@@ -65,7 +61,8 @@ def _bn_relu_conv(**conv_params):
         return Conv2D(filters=filters, kernel_size=kernel_size,
                       strides=strides, padding=padding,
                       kernel_initializer=kernel_initializer,
-                      kernel_regularizer=kernel_regularizer)(activation)
+                      kernel_regularizer=kernel_regularizer,
+                      use_bias=True)(activation)
 
     return f
 
@@ -90,7 +87,8 @@ def _shortcut(input, residual):
                           strides=(stride_width, stride_height),
                           padding="valid",
                           kernel_initializer="he_normal",
-                          kernel_regularizer=l2(WEIGHT_DECAY))(input)
+                          kernel_regularizer=l2(WEIGHT_DECAY),
+                          use_bias=True)(input)
 
     return add([shortcut, residual])
 
@@ -122,7 +120,8 @@ def basic_block(filters, init_strides=(1, 1), is_first_block_of_first_layer=Fals
                            strides=init_strides,
                            padding="same",
                            kernel_initializer="he_normal",
-                           kernel_regularizer=l2(WEIGHT_DECAY))(input)
+                           kernel_regularizer=l2(WEIGHT_DECAY),
+                           use_bias=True)(input)
         else:
             conv1 = _bn_relu_conv(filters=filters, kernel_size=(3, 3),
                                   strides=init_strides)(input)
@@ -148,7 +147,8 @@ def bottleneck(filters, init_strides=(1, 1), is_first_block_of_first_layer=False
                               strides=init_strides,
                               padding="same",
                               kernel_initializer="he_normal",
-                              kernel_regularizer=l2(WEIGHT_DECAY))(input)
+                              kernel_regularizer=l2(WEIGHT_DECAY),
+                              use_bias=True)(input)
         else:
             conv_1_1 = _bn_relu_conv(filters=filters, kernel_size=(1, 1),
                                      strides=init_strides)(input)
@@ -211,11 +211,10 @@ class ResnetBuilder(object):
         block_fn = _get_block(block_fn)
 
         input = Input(shape=input_shape)
-        conv1 = _conv_bn_relu(filters=64, kernel_size=(7, 7), strides=(2, 2))(input)
-        pool1 = MaxPooling2D(pool_size=(3, 3), strides=(2, 2), padding="same")(conv1)
+        conv1 = _conv_bn_relu(filters=8, kernel_size=(1, 1), strides=(1, 1))(input)
 
-        block = pool1
-        filters = 64
+        block = conv1
+        filters = 8
         for i, r in enumerate(repetitions):
             block = _residual_block(block_fn, filters=filters, repetitions=r, is_first_layer=(i == 0))(block)
             filters *= 2
@@ -224,12 +223,9 @@ class ResnetBuilder(object):
         block = _bn_relu(block)
 
         # Classifier block
-        block_shape = K.int_shape(block)
-        pool2 = AveragePooling2D(pool_size=(block_shape[ROW_AXIS], block_shape[COL_AXIS]),
-                                 strides=(1, 1))(block)
-        flatten1 = Flatten()(pool2)
-        dense = Dense(units=num_outputs, kernel_initializer="he_normal",
-                      activation="sigmoid")(flatten1)
+        pool2 = GlobalAveragePooling2D(data_format='channels_last')(block)
+        dense = Dense(units=num_outputs, kernel_initializer="he_normal", use_bias=True,
+                      activation="softmax")(pool2)
 
         model = Model(inputs=input, outputs=dense)
         return model
