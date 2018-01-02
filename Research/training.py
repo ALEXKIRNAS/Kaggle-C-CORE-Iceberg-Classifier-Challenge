@@ -17,6 +17,11 @@ def logloss_softmax(y_true, y_pred):
     return -np.average(np.log(proba))
 
 
+def logloss_sigmoid(y_true, y_pred):
+    proba = np.maximum(np.minimum(1 - 1e-15, y_pred), 1e-15)
+    return -np.average(np.log(proba) * y_true + (1 - y_true) * np.log(1 - proba))
+
+
 def get_model_callbacks(save_dir):
     stopping = EarlyStopping(monitor='val_loss', 
                              min_delta=1e-3,
@@ -65,8 +70,8 @@ def get_resnext():
     from resnext import ResNext
 
     model= ResNext(
-        input_shape=(75, 75, 4),
-        depth=11,
+        input_shape=(75, 75, 3),
+        depth=29,
         cardinality=4, 
         width=4,
         weight_decay=1e-2,
@@ -121,6 +126,19 @@ def get_resnet_50():
                                           weight_decay=0.)
 
     opt = RMSprop(lr=1e-3)
+    model.compile(loss='binary_crossentropy',
+                  optimizer=opt,
+                  metrics=['accuracy'])
+    return model
+
+
+def get_shallow():
+    from shallow import get_shallow_model
+    from keras.optimizers import Adam, SGD, RMSprop
+
+    model = get_shallow_model(weight_decay=0.)
+
+    opt=SGD(lr=0.001, momentum=0.9)
     model.compile(loss='binary_crossentropy',
                   optimizer=opt,
                   metrics=['accuracy'])

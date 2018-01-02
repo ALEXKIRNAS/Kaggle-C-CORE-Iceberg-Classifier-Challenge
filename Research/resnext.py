@@ -439,8 +439,8 @@ def __create_res_next(nb_classes, img_input, include_top, depth=29, cardinality=
 
     if include_top:
         x = GlobalAveragePooling2D()(x)
-        x = Dense(1, use_bias=False, kernel_regularizer=l2(weight_decay),
-                  kernel_initializer='he_normal', activation='sigmoid')(x)
+        x = Dense(nb_classes, use_bias=False, kernel_regularizer=l2(weight_decay),
+                  kernel_initializer='he_normal', activation='softmax')(x)
     else:
         if pooling == 'avg':
             x = GlobalAveragePooling2D()(x)
@@ -511,7 +511,7 @@ def __create_res_next_imagenet(nb_classes, img_input, include_top, depth, cardin
     if include_top:
         x = GlobalAveragePooling2D()(x)
         x = Dense(nb_classes, use_bias=False, kernel_regularizer=l2(weight_decay),
-                  kernel_initializer='he_normal', activation='softmax')(x)
+                  kernel_initializer='he_normal', activation='sigmoid')(x)
     else:
         if pooling == 'avg':
             x = GlobalAveragePooling2D()(x)
