@@ -102,4 +102,12 @@ ENV/
 
 input/
 experiments/
+submitions/
+best_models/
 
+
+# MacOS
+.DS_Store
+
+# PyCharm
+.idea

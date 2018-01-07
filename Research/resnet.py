@@ -4,24 +4,24 @@ import six
 from keras.models import Model
 from keras.layers import (
     Input,
-    Dense
+    Dense,
+    GaussianNoise
 )
 from keras.layers.convolutional import Conv2D
 from keras.layers.merge import add
 from keras.layers.normalization import BatchNormalization
 from keras.regularizers import l2
 from keras import backend as K
-from keras.layers.advanced_activations import PReLU
+from keras.layers.advanced_activations import ELU
 from keras.layers.pooling import GlobalAveragePooling2D
 
 WEIGHT_DECAY = None
-
 
 def _bn_relu(input):
     """Helper to build a BN -> relu block
     """
     norm = BatchNormalization(axis=CHANNEL_AXIS)(input)
-    return PReLU(shared_axes=(1, 2))(norm)
+    return ELU()(norm)
 
 
 def _conv_bn_relu(**conv_params):
@@ -211,10 +211,11 @@ class ResnetBuilder(object):
         block_fn = _get_block(block_fn)
 
         input = Input(shape=input_shape)
-        conv1 = _conv_bn_relu(filters=8, kernel_size=(1, 1), strides=(1, 1))(input)
+        noise_input = GaussianNoise(stddev=1e-5)(input)
+        conv1 = _conv_bn_relu(filters=6, kernel_size=(1, 1), strides=(1, 1))(noise_input)
 
         block = conv1
-        filters = 8
+        filters = 6
         for i, r in enumerate(repetitions):
             block = _residual_block(block_fn, filters=filters, repetitions=r, is_first_layer=(i == 0))(block)
             filters *= 2
@@ -236,6 +237,13 @@ class ResnetBuilder(object):
         WEIGHT_DECAY = weight_decay 
         
         return ResnetBuilder.build(input_shape, num_outputs, basic_block, [2, 2, 2, 2])
+
+    @staticmethod
+    def build_resnet_20(input_shape, num_outputs, weight_decay=1e-4):
+        global WEIGHT_DECAY
+        WEIGHT_DECAY = weight_decay
+
+        return ResnetBuilder.build(input_shape, num_outputs, basic_block, [2, 2, 2, 2, 2])
 
     @staticmethod
     def build_resnet_34(input_shape, num_outputs, weight_decay=1e-4):
