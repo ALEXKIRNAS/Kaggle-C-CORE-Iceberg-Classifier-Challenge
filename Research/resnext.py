@@ -83,8 +83,7 @@ def ResNext(input_shape=None, depth=29, cardinality=8, width=64, weight_decay=5e
         else:
             img_input = input_tensor
 
-    noise_image = GaussianNoise(1e-5)(img_input)
-    x = __create_res_next(classes, noise_image, include_top, depth, cardinality, width,
+    x = __create_res_next(classes, img_input, include_top, depth, cardinality, width,
                           weight_decay, pooling)
 
     # Ensure that the model takes into account
