@@ -9,10 +9,3 @@ My solution for C-CORE Iceberg Classifier Challenge on kaggle.
 ## Common models properties
 All models use common callbacks: EarlyStopping, ReduceLROnPlateau. 
 
-## Base model
-AlexNet-like architecture (for more details see [realiztion](./Research/base_model.py)).
-
-|Property|Value|
-|---|---|
-|Optimizer|SGD(lr=0.001, momentum=0.9)|
-|Weight decay|1e-6|
