@@ -8,7 +8,7 @@ from keras.callbacks import ModelCheckpoint, EarlyStopping, TensorBoard, ReduceL
 
 from data_loader import prepare_data, prepare_data_cv, load_data
 from data_generation import get_data_generator
-
+from plots import plot_precision_recall, plot_roc, plot_confusion_matrix
 
 def logloss_softmax(y_true, y_pred, eps=1e-15):
     proba = y_pred[np.arange(len(y_pred)), np.argmax(y_true, axis=1)]
@@ -30,8 +30,8 @@ def get_model_callbacks(save_dir):
     board = TensorBoard(log_dir=board_path)
     
     lr_sheduler = ReduceLROnPlateau(monitor='val_loss', 
-                                    factor=0.5,
-                                    patience=20,
+                                    factor=0.1,
+                                    patience=30,
                                     verbose=True,
                                     mode='min', 
                                     epsilon=1e-3,
@@ -75,9 +75,9 @@ def get_resnext():
 
     model= ResNext(
         input_shape=(75, 75, 3),
-        depth=11,
-        cardinality=4,
-        width=4,
+        depth=20,
+        cardinality=3,
+        width=5,
         weight_decay=0.,
         include_top=True, 
         weights=None,
@@ -91,9 +91,47 @@ def get_resnet_18():
 
     model = ResnetBuilder.build_resnet_18(input_shape=(3, 75, 75),
                                           num_outputs=2,
-                                          weight_decay=0.)
+                                          weight_decay=1e-5)
 
     return model
+
+
+def get_nasnet():
+    from nasnet import NASNet
+
+    model = NASNet(
+        input_shape=(75, 75, 3),
+        penultimate_filters=72,
+        nb_blocks=1,
+        filters_multiplier=2,
+        dropout=0.,
+        weight_decay=0.,
+        classes=2)
+
+    return model
+
+
+def get_squeezenet():
+    from squeezenet import SqueezeNet
+
+    model = SqueezeNet(
+        input_shape=(75, 75, 3),
+        filters=6,
+        weight_decay=1e-4,
+        classes=2)
+
+    return model
+
+
+def get_class_weights(y):
+    true_labels_count = np.sum(y[:, 1])
+    false_labels_count = y.shape[0] - true_labels_count
+    scaler = max(true_labels_count, false_labels_count)
+
+    return {
+        0:  scaler / false_labels_count,
+        1:  scaler / true_labels_count,
+    }
 
 
 def prepare_submission(models_proba, path, high_thr=0.9, low_thr=0.1):
@@ -112,46 +150,6 @@ def prepare_submission(models_proba, path, high_thr=0.9, low_thr=0.1):
     submission.to_csv(path, index=False)
 
 
-def plot_precision_recall(y_pred, y_true, path):
-    import matplotlib.pyplot as plt
-    from sklearn.metrics import precision_recall_curve
-
-    precision, recall, _ = precision_recall_curve(y_true, y_pred)
-
-    plt.figure(figsize=(10, 10))
-    plt.step(recall, precision, color='b', alpha=0.2,
-             where='post')
-    plt.fill_between(recall, precision, step='post', alpha=0.2,
-                     color='b')
-
-    plt.xlabel('Recall')
-    plt.ylabel('Precision')
-    plt.ylim([0.0, 1.05])
-    plt.xlim([0.0, 1.0])
-    plt.grid()
-    plt.title('2-class Precision-Recall curve: AP={0:0.6f}'.format(average_precision_score(y_true, y_pred)))
-    plt.savefig(path, dpi=80)
-
-
-def plot_roc(y_pred, y_true, path):
-    import matplotlib.pyplot as plt
-    from sklearn.metrics import roc_curve
-    fpr, tpr, _ = roc_curve(y_true, y_pred)
-
-    plt.figure(figsize=(10, 10))
-    plt.step(fpr, tpr, color='b', alpha=0.2,
-             where='post')
-    plt.plot([0., 1.], [0., 1.], color='navy', linestyle='--')
-
-    plt.xlabel('False positive rate')
-    plt.ylabel('True positive rate')
-    plt.ylim([0.0, 1.05])
-    plt.xlim([0.0, 1.0])
-    plt.grid()
-    plt.title('ROC AUC = {0:0.6f}'.format(roc_auc_score(y_true, y_pred)))
-    plt.savefig(path, dpi=80)
-
-
 def main(experiment_path, plot_results=False):
     (kfold_data, X_test) = prepare_data_cv('../input')
     
@@ -163,12 +161,15 @@ def main(experiment_path, plot_results=False):
     for idx, data in enumerate(kfold_data):
         X_train, y_train, X_valid, y_valid = data
         
-        model = load_model(get_resnext, weights='../experiments/resnext_02/fold_%02d/model/model_weights.hdf5' % idx)
+        model = load_model(get_resnext, weights=None)
         callbacks = get_model_callbacks(save_dir=os.path.join(experiment_path, 'fold_%02d' % idx))
         data_generator = get_data_generator(X_train, y_train, batch_size=64)
+        class_weights = get_class_weights(y_train)
+        print(class_weights)
 
         model.fit_generator(
             data_generator,
+            class_weight=class_weights,
             steps_per_epoch=30,
             epochs=2000,
             verbose=True,
@@ -198,23 +199,26 @@ def main(experiment_path, plot_results=False):
             plot_roc(proba[:, 1], y_valid.argmax(axis=1),
                      path=os.path.join(plots_path, 'roc.jpg'))
 
-    print('Loss:\nMean: %f\nStd: %f\nMin: %f\nMax: %f\n\n' % (np.mean(models_logloss), 
-                                                              np.std(models_logloss),
-                                                              np.min(models_logloss),
-                                                              np.max(models_logloss)))
+            plot_confusion_matrix(proba[:, 1], y_valid.argmax(axis=1),
+                                  path=os.path.join(plots_path, 'conf.jpg'))
 
-    print('ROC AUC:\nMean: %f\nStd: %f\nMin: %f\nMax: %f\n\n' % (np.mean(models_roc),
-                                                                 np.std(models_roc),
-                                                                 np.min(models_roc),
-                                                                 np.max(models_roc)))
+        print('Loss:\nMean: %f\nStd: %f\nMin: %f\nMax: %f\n\n' % (np.mean(models_logloss),
+                                                                  np.std(models_logloss),
+                                                                  np.min(models_logloss),
+                                                                  np.max(models_logloss)))
 
-    print('mAP:\nMean: %f\nStd: %f\nMin: %f\nMax: %f\n\n' % (np.mean(models_map),
-                                                             np.std(models_map),
-                                                             np.min(models_map),
-                                                             np.max(models_map)))
+        print('ROC AUC:\nMean: %f\nStd: %f\nMin: %f\nMax: %f\n\n' % (np.mean(models_roc),
+                                                                     np.std(models_roc),
+                                                                     np.min(models_roc),
+                                                                     np.max(models_roc)))
+
+        print('mAP:\nMean: %f\nStd: %f\nMin: %f\nMax: %f\n\n' % (np.mean(models_map),
+                                                                 np.std(models_map),
+                                                                 np.min(models_map),
+                                                                 np.max(models_map)))
 
     prepare_submission(models_proba, os.path.join(experiment_path, 'submission.csv'))
     
     
 if __name__ == '__main__':
-    main(experiment_path='../experiments/resnext_02', plot_results=True)
+    main(experiment_path='../experiments/resnext_20', plot_results=False)
