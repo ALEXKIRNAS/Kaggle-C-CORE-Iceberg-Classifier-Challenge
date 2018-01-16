@@ -10,6 +10,7 @@ from data_loader import prepare_data, prepare_data_cv, load_data
 from data_generation import get_data_generator
 from plots import plot_precision_recall, plot_roc, plot_confusion_matrix
 
+
 def logloss_softmax(y_true, y_pred, eps=1e-15):
     proba = y_pred[np.arange(len(y_pred)), np.argmax(y_true, axis=1)]
     proba = np.clip(proba, eps, 1 - eps)
@@ -18,8 +19,8 @@ def logloss_softmax(y_true, y_pred, eps=1e-15):
 
 def get_model_callbacks(save_dir):
     stopping = EarlyStopping(monitor='val_loss', 
-                             min_delta=1e-3,
-                             patience=50,
+                             min_delta=1e-2,
+                             patience=30,
                              verbose=False, 
                              mode='min')
     
@@ -29,12 +30,12 @@ def get_model_callbacks(save_dir):
     
     board = TensorBoard(log_dir=board_path)
     
-    lr_sheduler = ReduceLROnPlateau(monitor='val_loss', 
-                                    factor=0.1,
-                                    patience=30,
+    lr_sheduler = ReduceLROnPlateau(monitor='val_loss',
+                                    factor=0.3,
+                                    patience=10,
                                     verbose=True,
                                     mode='min', 
-                                    epsilon=1e-3,
+                                    epsilon=1e-2,
                                     min_lr=1e-5)
     
     model_path = os.path.join(save_dir, 'model/model_weights.hdf5')
@@ -62,7 +63,7 @@ def load_model(model_loader_fn, weights=None):
         model.load_weights(weights)
 
     opt = RMSprop(lr=1e-3)
-    model.compile(loss='binary_crossentropy',
+    model.compile(loss='categorical_crossentropy',
                   optimizer=opt,
                   metrics=['accuracy'])
 
@@ -75,9 +76,9 @@ def get_resnext():
 
     model= ResNext(
         input_shape=(75, 75, 3),
-        depth=20,
-        cardinality=3,
-        width=5,
+        depth=11,
+        cardinality=4,
+        width=4,
         weight_decay=0.,
         include_top=True, 
         weights=None,
@@ -89,36 +90,10 @@ def get_resnext():
 def get_resnet_18():
     from resnet import ResnetBuilder
 
-    model = ResnetBuilder.build_resnet_18(input_shape=(3, 75, 75),
+    model = ResnetBuilder.build_resnet_50(input_shape=(3, 75, 75),
                                           num_outputs=2,
-                                          weight_decay=1e-5)
-
-    return model
-
-
-def get_nasnet():
-    from nasnet import NASNet
-
-    model = NASNet(
-        input_shape=(75, 75, 3),
-        penultimate_filters=72,
-        nb_blocks=1,
-        filters_multiplier=2,
-        dropout=0.,
-        weight_decay=0.,
-        classes=2)
-
-    return model
-
-
-def get_squeezenet():
-    from squeezenet import SqueezeNet
-
-    model = SqueezeNet(
-        input_shape=(75, 75, 3),
-        filters=6,
-        weight_decay=1e-4,
-        classes=2)
+                                          filters=16,
+                                          weight_decay=1e-4)
 
     return model
 
@@ -129,8 +104,8 @@ def get_class_weights(y):
     scaler = max(true_labels_count, false_labels_count)
 
     return {
-        0:  scaler / false_labels_count,
-        1:  scaler / true_labels_count,
+        1:  scaler / false_labels_count,
+        0:  scaler / true_labels_count,
     }
 
 
@@ -161,16 +136,16 @@ def main(experiment_path, plot_results=False):
     for idx, data in enumerate(kfold_data):
         X_train, y_train, X_valid, y_valid = data
         
-        model = load_model(get_resnext, weights=None)
+        model = load_model(get_resnet_18, weights=None)
         callbacks = get_model_callbacks(save_dir=os.path.join(experiment_path, 'fold_%02d' % idx))
-        data_generator = get_data_generator(X_train, y_train, batch_size=64)
-        class_weights = get_class_weights(y_train)
-        print(class_weights)
+        data_generator = get_data_generator(X_train, y_train, batch_size=128)
+        # class_weights = get_class_weights(y_train)
+        # print(class_weights)
 
         model.fit_generator(
             data_generator,
-            class_weight=class_weights,
-            steps_per_epoch=30,
+            # class_weight=class_weights,
+            steps_per_epoch=10,
             epochs=2000,
             verbose=True,
             validation_data=(X_valid, y_valid),
@@ -217,8 +192,10 @@ def main(experiment_path, plot_results=False):
                                                                  np.min(models_map),
                                                                  np.max(models_map)))
 
+        raise NotImplementedError(":3")
+
     prepare_submission(models_proba, os.path.join(experiment_path, 'submission.csv'))
     
     
 if __name__ == '__main__':
-    main(experiment_path='../experiments/resnext_20', plot_results=False)
+    main(experiment_path='../experiments/resnet_50_new', plot_results=True)

@@ -2,7 +2,10 @@ import six
 from keras.models import Model
 from keras.layers import (
     Input,
-    Dense
+    Dense,
+    GaussianNoise,
+    Lambda,
+    concatenate
 )
 from keras.layers.convolutional import Conv2D
 from keras.layers.merge import add
@@ -113,7 +116,7 @@ def basic_block(filters, init_strides=(1, 1), is_first_block_of_first_layer=Fals
     def f(input):
 
         if is_first_block_of_first_layer:
-            # don't repeat bn->relu since we just did bn->relu->maxpool
+            # don't repeat bn->elu since we just did bn->elu->maxpool
             conv1 = Conv2D(filters=filters, kernel_size=(3, 3),
                            strides=init_strides,
                            padding="same",
@@ -125,6 +128,32 @@ def basic_block(filters, init_strides=(1, 1), is_first_block_of_first_layer=Fals
                                  strides=init_strides)(input)
 
         residual = _bn_elu_conv(filters=filters, kernel_size=(3, 3))(conv1)
+        return _shortcut(input, residual)
+
+    return f
+
+
+def bottleneck(filters, init_strides=(1, 1), is_first_block_of_first_layer=False):
+    """Bottleneck architecture for > 34 layer resnet.
+    Follows improved proposed scheme in http://arxiv.org/pdf/1603.05027v2.pdf
+    Returns:
+        A final conv layer of filters * 4
+    """
+    def f(input):
+
+        if is_first_block_of_first_layer:
+            # don't repeat bn->relu since we just did bn->relu->maxpool
+            conv_1_1 = Conv2D(filters=filters, kernel_size=(1, 1),
+                              strides=init_strides,
+                              padding="same",
+                              kernel_initializer="he_normal",
+                              kernel_regularizer=l2(WEIGHT_DECAY))(input)
+        else:
+            conv_1_1 = _bn_elu_conv(filters=filters, kernel_size=(1, 1),
+                                     strides=init_strides)(input)
+
+        conv_3_3 = _bn_elu_conv(filters=filters, kernel_size=(3, 3))(conv_1_1)
+        residual = _bn_elu_conv(filters=filters * 4, kernel_size=(1, 1))(conv_3_3)
         return _shortcut(input, residual)
 
     return f
@@ -155,7 +184,7 @@ def _get_block(identifier):
 
 class ResnetBuilder(object):
     @staticmethod
-    def build(input_shape, num_outputs, block_fn, repetitions):
+    def build(input_shape, num_outputs, block_fn, filters, repetitions):
         """Builds a custom ResNet like architecture.
 
         Args:
@@ -181,10 +210,22 @@ class ResnetBuilder(object):
         block_fn = _get_block(block_fn)
 
         input = Input(shape=input_shape)
-        conv1 = _conv_bn_elu(filters=8, kernel_size=(1, 1), strides=(1, 1))(input)
+
+        x = Lambda(lambda x: x[:, :, :, 0:2]
+                             if K.image_data_format() == 'channels_last'
+                             else x[:, 0:2, :, :])(input)
+
+        angle = Lambda(lambda x: x[:, :, :, 2:]
+                              if K.image_data_format() == 'channels_last'
+                              else x[:, 2:, :, :])(input)
+
+        x_noise = GaussianNoise(3e-1)(x)
+
+        noise_input = concatenate([x_noise, angle], axis=-1)
+
+        conv1 = _conv_bn_elu(filters=filters, kernel_size=(7, 7), strides=(2, 2))(noise_input)
 
         block = conv1
-        filters = 8
         for i, r in enumerate(repetitions):
             block = _residual_block(block_fn, filters=filters, repetitions=r, is_first_layer=(i == 0))(block)
             filters *= 2
@@ -195,19 +236,33 @@ class ResnetBuilder(object):
         # Classifier block
         pool2 = GlobalAveragePooling2D(data_format='channels_last')(block)
         dense = Dense(units=num_outputs, kernel_initializer="he_normal", use_bias=True,
-                      activation="softmax")(pool2)
+                      kernel_regularizer=l2(WEIGHT_DECAY), activation="softmax")(pool2)
 
         model = Model(inputs=input, outputs=dense)
         return model
 
     @staticmethod
-    def build_resnet_18(input_shape, num_outputs, weight_decay=0., weights=None):
+    def build_resnet_18(input_shape, num_outputs, filters, weight_decay=0., weights=None):
         global WEIGHT_DECAY
         WEIGHT_DECAY = weight_decay 
 
-        model = ResnetBuilder.build(input_shape, num_outputs, basic_block, [2, 2, 2, 2])
+        model = ResnetBuilder.build(input_shape, num_outputs, basic_block, filters, [2, 2, 2, 2])
 
         if weights:
             model.load_weights(weights)
 
         return model
+
+    @staticmethod
+    def build_resnet_34(input_shape, num_outputs, filters, weight_decay=0., weights=None):
+        global WEIGHT_DECAY
+        WEIGHT_DECAY = weight_decay
+
+        return ResnetBuilder.build(input_shape, num_outputs, basic_block, filters, [3, 4, 6, 3])
+
+    @staticmethod
+    def build_resnet_50(input_shape, num_outputs, filters, weight_decay=0., weights=None):
+        global WEIGHT_DECAY
+        WEIGHT_DECAY = weight_decay
+
+        return ResnetBuilder.build(input_shape, num_outputs, bottleneck, filters, [3, 4, 6, 3])

@@ -121,13 +121,13 @@ def NASNet(input_shape=None,
 
     x, p = _reduction_A(x, p, filters * filters_multiplier, weight_decay, id='reduce_%d' % (nb_blocks))
 
-    # for i in range(nb_blocks):
-    #     x, p = _normal_A(x, p, filters * filters_multiplier, weight_decay, id='%d' % (nb_blocks + i + 1))
+    for i in range(nb_blocks):
+        x, p = _normal_A(x, p, filters * filters_multiplier, weight_decay, id='%d' % (nb_blocks + i + 1))
 
-    # x, p = _reduction_A(x, p, filters * filters_multiplier ** 2, weight_decay, id='reduce_%d' % (2 * nb_blocks))
-    #
-    # for i in range(nb_blocks):
-    #     x, p = _normal_A(x, p, filters * filters_multiplier ** 2, weight_decay, id='%d' % (2 * nb_blocks + i + 1))
+    x, p = _reduction_A(x, p, filters * filters_multiplier ** 2, weight_decay, id='reduce_%d' % (2 * nb_blocks))
+
+    for i in range(nb_blocks):
+        x, p = _normal_A(x, p, filters * filters_multiplier ** 2, weight_decay, id='%d' % (2 * nb_blocks + i + 1))
 
     x = Activation('elu')(x)
     x = GlobalAveragePooling2D()(x)
