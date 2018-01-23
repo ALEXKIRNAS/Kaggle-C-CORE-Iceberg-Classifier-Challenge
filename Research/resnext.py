@@ -3,10 +3,9 @@ from __future__ import absolute_import
 from __future__ import division
 
 from keras.models import Model
-from keras.layers.core import Dense, Lambda
-from keras.layers.advanced_activations import ELU
+from keras.layers.core import Dense, Lambda, Activation
 from keras.layers.convolutional import Conv2D
-from keras.layers.pooling import GlobalAveragePooling2D, GlobalMaxPooling2D, MaxPooling2D
+from keras.layers.pooling import GlobalAveragePooling2D, GlobalMaxPooling2D
 from keras.layers import Input, GaussianNoise
 from keras.layers.merge import concatenate, add
 from keras.layers.normalization import BatchNormalization
@@ -111,10 +110,10 @@ def __initial_conv_block(input, weight_decay=5e-4):
     '''
     channel_axis = 1 if K.image_data_format() == 'channels_first' else -1
 
-    x = Conv2D(64, (3, 3), padding='same', use_bias=False, kernel_initializer='he_normal',
+    x = Conv2D(32, (3, 3), padding='same', use_bias=True, kernel_initializer='he_normal',
                kernel_regularizer=l2(weight_decay))(input)
     x = BatchNormalization(axis=channel_axis)(x)
-    x = ELU()(x)
+    x = Activation('elu')(x)
 
     return x
 
@@ -136,10 +135,10 @@ def __grouped_convolution_block(input, grouped_channels, cardinality, strides, w
 
     if cardinality == 1:
         # with cardinality 1, it is a standard convolution
-        x = Conv2D(grouped_channels, (3, 3), padding='same', use_bias=False, strides=(strides, strides),
+        x = Conv2D(grouped_channels, (3, 3), padding='same', use_bias=True, strides=(strides, strides),
                    kernel_initializer='he_normal', kernel_regularizer=l2(weight_decay))(init)
         x = BatchNormalization(axis=channel_axis)(x)
-        x = ELU()(x)
+        x = Activation('elu')(x)
         return x
 
     for c in range(cardinality):
@@ -154,7 +153,7 @@ def __grouped_convolution_block(input, grouped_channels, cardinality, strides, w
 
     group_merge = concatenate(group_list, axis=channel_axis)
     x = BatchNormalization(axis=channel_axis)(group_merge)
-    x = ELU()(x)
+    x = Activation('elu')(x)
 
     return x
 
@@ -179,27 +178,27 @@ def __bottleneck_block(input, filters=64, cardinality=8, strides=1, weight_decay
     if K.image_data_format() == 'channels_first':
         if init._keras_shape[1] != 2 * filters:
             init = Conv2D(filters * 2, (1, 1), padding='same', strides=(strides, strides),
-                          use_bias=False, kernel_initializer='he_normal', kernel_regularizer=l2(weight_decay))(init)
+                          use_bias=True, kernel_initializer='he_normal', kernel_regularizer=l2(weight_decay))(init)
             init = BatchNormalization(axis=channel_axis)(init)
     else:
         if init._keras_shape[-1] != 2 * filters:
             init = Conv2D(filters * 2, (1, 1), padding='same', strides=(strides, strides),
-                          use_bias=False, kernel_initializer='he_normal', kernel_regularizer=l2(weight_decay))(init)
+                          use_bias=True, kernel_initializer='he_normal', kernel_regularizer=l2(weight_decay))(init)
             init = BatchNormalization(axis=channel_axis)(init)
 
     x = Conv2D(filters, (1, 1), padding='same', use_bias=False,
                kernel_initializer='he_normal', kernel_regularizer=l2(weight_decay))(input)
     x = BatchNormalization(axis=channel_axis)(x)
-    x = ELU()(x)
+    x = Activation('elu')(x)
 
     x = __grouped_convolution_block(x, grouped_channels, cardinality, strides, weight_decay)
 
-    x = Conv2D(filters * 2, (1, 1), padding='same', use_bias=False, kernel_initializer='he_normal',
+    x = Conv2D(filters * 2, (1, 1), padding='same', use_bias=True, kernel_initializer='he_normal',
                kernel_regularizer=l2(weight_decay))(x)
     x = BatchNormalization(axis=channel_axis)(x)
 
     x = add([init, x])
-    x = ELU()(x)
+    x = Activation('elu')(x)
 
     return x
 
@@ -247,7 +246,20 @@ def __create_res_next(nb_classes, img_input, include_top, depth=29, cardinality=
         filters_list.append(filters)
         filters *= 2  # double the size of the filters
 
-    x = __initial_conv_block(img_input, weight_decay)
+    x = Lambda(lambda x: x[:, :, :, 0:2]
+                         if K.image_data_format() == 'channels_last'
+                         else x[:, 0:2, :, :])(img_input)
+
+    angle = Lambda(lambda x: x[:, :, :, 2:]
+                             if K.image_data_format() == 'channels_last'
+                             else x[:, 2:, :, :])(img_input)
+
+    x_noise = GaussianNoise(5e-2)(x)
+    angle_noise = GaussianNoise(5e-3)(angle)
+
+    noise_input = concatenate([x_noise, angle_noise], axis=-1)
+
+    x = __initial_conv_block(noise_input, weight_decay)
 
     # block 1 (no pooling)
     for i in range(N[0]):

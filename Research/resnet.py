@@ -12,7 +12,7 @@ from keras.layers.merge import add
 from keras.layers.normalization import BatchNormalization
 from keras.regularizers import l2
 from keras import backend as K
-from keras.layers.advanced_activations import ELU
+from keras.layers.advanced_activations import ELU, PReLU
 from keras.layers.pooling import GlobalAveragePooling2D
 
 WEIGHT_DECAY = None
@@ -22,7 +22,7 @@ def _bn_elu(input):
     """Helper to build a BN -> elu block
     """
     norm = BatchNormalization(axis=CHANNEL_AXIS)(input)
-    return ELU()(norm)
+    return PReLU(shared_axes=[3])(norm)
 
 
 def _conv_bn_elu(**conv_params):
@@ -133,32 +133,6 @@ def basic_block(filters, init_strides=(1, 1), is_first_block_of_first_layer=Fals
     return f
 
 
-def bottleneck(filters, init_strides=(1, 1), is_first_block_of_first_layer=False):
-    """Bottleneck architecture for > 34 layer resnet.
-    Follows improved proposed scheme in http://arxiv.org/pdf/1603.05027v2.pdf
-    Returns:
-        A final conv layer of filters * 4
-    """
-    def f(input):
-
-        if is_first_block_of_first_layer:
-            # don't repeat bn->relu since we just did bn->relu->maxpool
-            conv_1_1 = Conv2D(filters=filters, kernel_size=(1, 1),
-                              strides=init_strides,
-                              padding="same",
-                              kernel_initializer="he_normal",
-                              kernel_regularizer=l2(WEIGHT_DECAY))(input)
-        else:
-            conv_1_1 = _bn_elu_conv(filters=filters, kernel_size=(1, 1),
-                                     strides=init_strides)(input)
-
-        conv_3_3 = _bn_elu_conv(filters=filters, kernel_size=(3, 3))(conv_1_1)
-        residual = _bn_elu_conv(filters=filters * 4, kernel_size=(1, 1))(conv_3_3)
-        return _shortcut(input, residual)
-
-    return f
-
-
 def _handle_dim_ordering():
     global ROW_AXIS
     global COL_AXIS
@@ -210,20 +184,7 @@ class ResnetBuilder(object):
         block_fn = _get_block(block_fn)
 
         input = Input(shape=input_shape)
-
-        x = Lambda(lambda x: x[:, :, :, 0:2]
-                             if K.image_data_format() == 'channels_last'
-                             else x[:, 0:2, :, :])(input)
-
-        angle = Lambda(lambda x: x[:, :, :, 2:]
-                              if K.image_data_format() == 'channels_last'
-                              else x[:, 2:, :, :])(input)
-
-        x_noise = GaussianNoise(3e-1)(x)
-
-        noise_input = concatenate([x_noise, angle], axis=-1)
-
-        conv1 = _conv_bn_elu(filters=filters, kernel_size=(7, 7), strides=(2, 2))(noise_input)
+        conv1 = _conv_bn_elu(filters=filters, kernel_size=(3, 3), strides=(1, 1))(input)
 
         block = conv1
         for i, r in enumerate(repetitions):
@@ -252,17 +213,3 @@ class ResnetBuilder(object):
             model.load_weights(weights)
 
         return model
-
-    @staticmethod
-    def build_resnet_34(input_shape, num_outputs, filters, weight_decay=0., weights=None):
-        global WEIGHT_DECAY
-        WEIGHT_DECAY = weight_decay
-
-        return ResnetBuilder.build(input_shape, num_outputs, basic_block, filters, [3, 4, 6, 3])
-
-    @staticmethod
-    def build_resnet_50(input_shape, num_outputs, filters, weight_decay=0., weights=None):
-        global WEIGHT_DECAY
-        WEIGHT_DECAY = weight_decay
-
-        return ResnetBuilder.build(input_shape, num_outputs, bottleneck, filters, [3, 4, 6, 3])
